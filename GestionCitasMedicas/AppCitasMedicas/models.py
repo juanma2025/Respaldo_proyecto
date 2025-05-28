@@ -12,17 +12,23 @@ class User(AbstractUser):
     
     user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES)
     email = models.EmailField(unique=True)
-    full_name = models.CharField(max_length=200)
+    full_name = models.CharField(max_length=255, default='Sin nombre')
     phone_number = models.CharField(
         max_length=15,
         validators=[RegexValidator(regex=r'^\+?1?\d{9,15}$')],
         blank=True
     )
     is_email_verified = models.BooleanField(default=False)
-    email_verification_token = models.CharField(max_length=100, blank=True)
+
+    email_verification_token = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        default=None
+    )
     
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username', 'full_name']
+    #USERNAME_FIELD = 'email'
+    #REQUIRED_FIELDS = ['username', 'full_name']
     
     def save(self, *args, **kwargs):
         if not self.username:
@@ -80,16 +86,19 @@ class DoctorProfile(models.Model):
         return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
 
 class DoctorSchedule(models.Model):
-    WEEKDAY_CHOICES = [
-        (0, 'Lunes'),
-        (1, 'Martes'),
-        (2, 'Miércoles'),
-        (3, 'Jueves'),
-        (4, 'Viernes'),
-        (5, 'Sábado'),
-        (6, 'Domingo'),
-    ]
+    class WEEKDAY_CHOICES(models.IntegerChoices):
+        MONDAY = 0, 'Lunes'
+        TUESDAY = 1, 'Martes'
+        WEDNESDAY = 2, 'Miércoles'
+        THURSDAY = 3, 'Jueves'
+        FRIDAY = 4, 'Viernes'
+        SATURDAY = 5, 'Sábado'
+        SUNDAY = 6, 'Domingo'
     
+    weekday = models.IntegerField(
+        choices=WEEKDAY_CHOICES.choices,
+        default=WEEKDAY_CHOICES.MONDAY
+    )
     doctor = models.ForeignKey(DoctorProfile, on_delete=models.CASCADE, related_name='schedules')
     weekday = models.IntegerField(choices=WEEKDAY_CHOICES)
     start_time = models.TimeField()
@@ -108,7 +117,10 @@ class DoctorUnavailability(models.Model):
     date = models.DateField()
     start_time = models.TimeField()
     end_time = models.TimeField()
-    reason = models.CharField(max_length=200, blank=True)
+    reason = models.CharField(
+        max_length=255, 
+        default='No especificado'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
