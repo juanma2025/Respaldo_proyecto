@@ -157,7 +157,7 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'citasmedicasproyect2025@gmail.com'
-EMAIL_HOST_PASSWORD = 'Citas123456789'
+EMAIL_HOST_PASSWORD = 'hrrf tqap ztkk qwyj'
 DEFAULT_FROM_EMAIL = 'citasmedicasproyect2025@gmail.com'
 
 # URLs base para el frontend
