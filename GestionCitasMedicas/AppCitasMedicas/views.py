@@ -1,107 +1,55 @@
 from rest_framework import status, generics, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.core.mail import send_mail
-from django.conf import settings
 from django.shortcuts import get_object_or_404
-from .models import User, Patient, Doctor, DoctorSchedule, DoctorUnavailability
+from .models import User, PatientProfile, DoctorProfile, DoctorSchedule
 from .serializers import (
-    PatientRegistrationSerializer, DoctorRegistrationSerializer, 
-    LoginSerializer, PatientProfileSerializer, DoctorProfileSerializer,
-    DoctorScheduleSerializer, DoctorUnavailabilitySerializer,
-    DoctorPublicSerializer
+    PatientRegistrationSerializer, 
+    DoctorRegistrationSerializer,
+    LoginSerializer,
+    UserProfileSerializer,
+    PatientProfileSerializer,
+    DoctorProfileSerializer,
+    DoctorScheduleSerializer
 )
+from django.utils import timezone
 
 @api_view(['POST'])
-@permission_classes([permissions.AllowAny])
+@permission_classes([AllowAny])
 def register_patient(request):
     serializer = PatientRegistrationSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
-        
-        # Enviar email de verificación
-        verification_url = f"{settings.FRONTEND_URL}/verify-email/{user.email_verification_token}"
-        subject = 'Verifica tu cuenta - Sistema de Citas Médicas'
-        message = f"""
-        Hola {user.first_name},
-        
-        Gracias por registrarte en nuestro sistema de citas médicas.
-        
-        Para activar tu cuenta, haz clic en el siguiente enlace:
-        {verification_url}
-        
-        Si no solicitaste esta cuenta, puedes ignorar este mensaje.
-        
-        Saludos,
-        Equipo de Citas Médicas
-        """
-        
-        try:
-            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
-            return Response({
-                'message': 'Cuenta creada exitosamente. Revisa tu correo para verificar la cuenta.',
-                'email': user.email
-            }, status=status.HTTP_201_CREATED)
-        except Exception as e:
-            return Response({
-                'message': 'Cuenta creada pero hubo un error enviando el email de verificación.',
-                'email': user.email
-            }, status=status.HTTP_201_CREATED)
-    
+        return Response({
+            'message': 'Paciente registrado exitosamente. Por favor, revisa tu correo para verificar tu cuenta.',
+            'user_id': user.id
+        }, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
-@permission_classes([permissions.AllowAny])
+@permission_classes([AllowAny])
 def register_doctor(request):
     serializer = DoctorRegistrationSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
-        
-        # Enviar credenciales por email
-        subject = 'Bienvenido - Credenciales de acceso al Sistema de Citas Médicas'
-        message = f"""
-        Hola Dr. {user.first_name} {user.last_name},
-        
-        Tu cuenta ha sido creada exitosamente en nuestro sistema de citas médicas.
-        
-        Tus credenciales de acceso son:
-        Email: {user.email}
-        Contraseña: {user.temp_password}
-        
-        Por favor, cambia tu contraseña después del primer inicio de sesión.
-        
-        Puedes acceder al sistema en: {settings.FRONTEND_URL}/login
-        
-        Saludos,
-        Equipo de Citas Médicas
-        """
-        
-        try:
-            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
-            return Response({
-                'message': 'Cuenta de médico creada exitosamente. Las credenciales han sido enviadas por correo.',
-                'email': user.email
-            }, status=status.HTTP_201_CREATED)
-        except Exception as e:
-            return Response({
-                'message': 'Cuenta creada pero hubo un error enviando las credenciales por email.',
-                'email': user.email
-            }, status=status.HTTP_201_CREATED)
-    
+        return Response({
+            'message': 'Médico registrado exitosamente. Las credenciales han sido enviadas por correo.',
+            'user_id': user.id
+        }, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
-@permission_classes([permissions.AllowAny])
+@permission_classes([AllowAny])
 def verify_email(request, token):
     try:
         user = User.objects.get(email_verification_token=token)
         user.is_email_verified = True
-        user.email_verification_token = None
+        user.email_verification_token = ''
         user.save()
-        
         return Response({
-            'message': 'Email verificado exitosamente. Ya puedes iniciar sesión.'
+            'message': 'Correo verificado exitosamente. Ya puedes iniciar sesión.'
         }, status=status.HTTP_200_OK)
     except User.DoesNotExist:
         return Response({
@@ -109,76 +57,213 @@ def verify_email(request, token):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
-@permission_classes([permissions.AllowAny])
-def login_view(request):
+@permission_classes([AllowAny])
+def login(request):
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.validated_data['user']
         refresh = RefreshToken.for_user(user)
-        
         return Response({
             'refresh': str(refresh),
             'access': str(refresh.access_token),
-            'user_type': user.user_type,
-            'user_id': str(user.id),
-            'name': f"{user.first_name} {user.last_name}"
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'full_name': user.full_name,
+                'user_type': user.user_type
+            }
         }, status=status.HTTP_200_OK)
-    
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class PatientProfileView(generics.RetrieveUpdateAPIView):
-    serializer_class = PatientProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def get_object(self):
-        return get_object_or_404(Patient, user=self.request.user)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout(request):
+    try:
+        refresh_token = request.data["refresh_token"]
+        token = RefreshToken(refresh_token)
+        token.blacklist()
+        return Response({'message': 'Sesión cerrada exitosamente.'}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({'error': 'Token inválido.'}, status=status.HTTP_400_BAD_REQUEST)
 
-class DoctorProfileView(generics.RetrieveUpdateAPIView):
-    serializer_class = DoctorProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profile(request):
+    user = request.user
+    if user.user_type == 'patient':
+        profile = get_object_or_404(PatientProfile, user=user)
+        serializer = PatientProfileSerializer(profile)
+    else:
+        profile = get_object_or_404(DoctorProfile, user=user)
+        serializer = DoctorProfileSerializer(profile)
     
-    def get_object(self):
-        return get_object_or_404(Doctor, user=self.request.user)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
-class DoctorListView(generics.ListAPIView):
-    queryset = Doctor.objects.all()
-    serializer_class = DoctorPublicSerializer
-    permission_classes = [permissions.IsAuthenticated]
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_profile(request):
+    user = request.user
     
-    def get_queryset(self):
-        queryset = Doctor.objects.all()
-        specialty = self.request.query_params.get('specialty', None)
-        if specialty:
-            queryset = queryset.filter(specialty=specialty)
-        return queryset
+    # Actualizar datos del usuario
+    user_serializer = UserProfileSerializer(user, data=request.data, partial=True)
+    if user_serializer.is_valid():
+        user_serializer.save()
+        
+        # Actualizar perfil específico
+        if user.user_type == 'patient':
+            profile = get_object_or_404(PatientProfile, user=user)
+            profile_serializer = PatientProfileSerializer(profile, data=request.data, partial=True)
+        else:
+            profile = get_object_or_404(DoctorProfile, user=user)
+            profile_serializer = DoctorProfileSerializer(profile, data=request.data, partial=True)
+        
+        if profile_serializer.is_valid():
+            profile_serializer.save()
+            return Response({
+                'message': 'Perfil actualizado exitosamente.',
+                'user': user_serializer.data,
+                'profile': profile_serializer.data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response(profile_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    return Response(user_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class DoctorScheduleView(generics.ListCreateAPIView):
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_doctors_by_specialty(request):
+    specialty = request.GET.get('specialty')
+    if specialty:
+        doctors = DoctorProfile.objects.filter(
+            specialty=specialty, 
+            is_available=True,
+            user__is_email_verified=True
+        )
+    else:
+        doctors = DoctorProfile.objects.filter(
+            is_available=True,
+            user__is_email_verified=True
+        )
+    
+    serializer = DoctorProfileSerializer(doctors, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_specialties(request):
+    """Obtiene todas las especialidades disponibles"""
+    specialties = [{'value': choice[0], 'label': choice[1]} 
+                  for choice in DoctorProfile.SPECIALTY_CHOICES]
+    return Response(specialties, status=status.HTTP_200_OK)
+
+# Vistas para horarios de médicos
+class DoctorScheduleListCreate(generics.ListCreateAPIView):
     serializer_class = DoctorScheduleSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        doctor = get_object_or_404(Doctor, user=self.request.user)
-        return DoctorSchedule.objects.filter(doctor=doctor)
+        if self.request.user.user_type == 'doctor':
+            doctor_profile = get_object_or_404(DoctorProfile, user=self.request.user)
+            return DoctorSchedule.objects.filter(doctor=doctor_profile)
+        return DoctorSchedule.objects.none()
     
     def perform_create(self, serializer):
-        doctor = get_object_or_404(Doctor, user=self.request.user)
-        serializer.save(doctor=doctor)
-
-class DoctorUnavailabilityView(generics.ListCreateAPIView):
-    serializer_class = DoctorUnavailabilitySerializer
-    permission_classes = [permissions.IsAuthenticated]
+        if self.request.user.user_type != 'doctor':
+            raise PermissionDenied("Solo los médicos pueden crear horarios.")
+        
+        doctor_profile = get_object_or_404(DoctorProfile, user=self.request.user)
+        serializer.save(doctor=doctor_profile)
+        
+class DoctorScheduleDetail(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = DoctorScheduleSerializer
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        doctor = get_object_or_404(Doctor, user=self.request.user)
-        return DoctorUnavailability.objects.filter(doctor=doctor)
+        # Solo permitir acceso a los propios horarios del médico
+        if self.request.user.user_type == 'doctor':
+            doctor_profile = get_object_or_404(DoctorProfile, user=self.request.user)
+            return DoctorSchedule.objects.filter(doctor=doctor_profile)
+        return DoctorSchedule.objects.none()
     
-    def perform_create(self, serializer):
-        doctor = get_object_or_404(Doctor, user=self.request.user)
-        serializer.save(doctor=doctor)
-
-@api_view(['DELETE'])
-def delete_unavailability(request, unavailability_id):
-    doctor = get_object_or_404(Doctor, user=request.user)
-    unavailability = get_object_or_404(DoctorUnavailability, id=unavailability_id, doctor=doctor)
-    unavailability.delete()
-    return Response({'message': 'Horario eliminado exitosamente'}, status=status.HTTP_200_OK)
+    def get_object(self):
+        """
+        Obtiene el objeto específico del horario verificando permisos
+        """
+        queryset = self.get_queryset()
+        schedule_id = self.kwargs.get('pk')
+        
+        schedule = get_object_or_404(queryset, pk=schedule_id)
+        
+        # Verificar que el médico solo puede acceder a sus propios horarios
+        if schedule.doctor.user != self.request.user:
+            raise PermissionDenied("No tiene permisos para acceder a este horario.")
+        
+        return schedule
+    
+    def perform_update(self, serializer):
+        """
+        Validaciones adicionales antes de actualizar
+        """
+        if self.request.user.user_type != 'doctor':
+            raise PermissionDenied("Solo los médicos pueden modificar horarios.")
+        
+        # Verificar que no haya citas programadas en este horario antes de modificarlo
+        schedule = self.get_object()
+        
+        # Si se está cambiando la disponibilidad a False, verificar citas existentes
+        if not serializer.validated_data.get('is_available', True):
+            from .models import Appointment
+            
+            upcoming_appointments = Appointment.objects.filter(
+                doctor=schedule.doctor,
+                appointment_date__gte=timezone.now().date(),
+                status__in=['scheduled', 'confirmed']
+            )
+            
+            # Filtrar citas que caigan en este horario
+            conflicting_appointments = []
+            for appointment in upcoming_appointments:
+                appointment_weekday = appointment.appointment_date.weekday()
+                if (appointment_weekday == schedule.weekday and 
+                    schedule.start_time <= appointment.appointment_time < schedule.end_time):
+                    conflicting_appointments.append(appointment)
+            
+            if conflicting_appointments:
+                raise ValidationError({
+                    'non_field_errors': [
+                        f'No se puede desactivar este horario. Tiene {len(conflicting_appointments)} cita(s) programada(s).'
+                    ]
+                })
+        
+        serializer.save()
+    
+    def perform_destroy(self, instance):
+        """
+        Validaciones antes de eliminar un horario
+        """
+        if self.request.user.user_type != 'doctor':
+            raise PermissionDenied("Solo los médicos pueden eliminar horarios.")
+        
+        # Verificar que no haya citas programadas en este horario
+        from .models import Appointment
+        
+        upcoming_appointments = Appointment.objects.filter(
+            doctor=instance.doctor,
+            appointment_date__gte=timezone.now().date(),
+            status__in=['scheduled', 'confirmed']
+        )
+        
+        # Filtrar citas que caigan en este horario
+        conflicting_appointments = []
+        for appointment in upcoming_appointments:
+            appointment_weekday = appointment.appointment_date.weekday()
+            if (appointment_weekday == instance.weekday and 
+                instance.start_time <= appointment.appointment_time < instance.end_time):
+                conflicting_appointments.append(appointment)
+        
+        if conflicting_appointments:
+            raise ValidationError(
+                f'No se puede eliminar este horario. Tiene {len(conflicting_appointments)} cita(s) programada(s).'
+            )
+        
+        instance.delete()

@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'AppCitasMedicas',
     'rest_framework_simplejwt',
     'corsheaders',
+    'appointments',
 ]
 
 MIDDLEWARE = [
@@ -164,3 +165,4 @@ FRONTEND_URL = 'http://localhost:5173'
 
 # Al final del archivo settings.py
 AUTH_USER_MODEL = 'AppCitasMedicas.User'
+

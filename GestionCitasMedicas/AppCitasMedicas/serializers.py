@@ -1,65 +1,96 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from django.contrib.auth.password_validation import validate_password
-from .models import User, Patient, Doctor, DoctorSchedule, DoctorUnavailability
-import secrets
-import string
+from django.core.mail import send_mail
+from django.conf import settings
+from .models import User, PatientProfile, DoctorProfile, DoctorSchedule
+import re
 
 class PatientRegistrationSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, validators=[validate_password])
+    password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
     
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'email', 'phone', 'password', 'password_confirm']
-    
-    def validate(self, attrs):
-        if attrs['password'] != attrs['password_confirm']:
-            raise serializers.ValidationError("Las contraseñas no coinciden")
-        return attrs
+        fields = ['email', 'full_name', 'phone_number', 'password', 'password_confirm']
     
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Este correo electrónico ya está registrado")
+            raise serializers.ValidationError("Este correo electrónico ya está registrado.")
         return value
+    
+    def validate_phone_number(self, value):
+        if not re.match(r'^\+?1?\d{9,15}$', value):
+            raise serializers.ValidationError("Formato de teléfono inválido.")
+        return value
+    
+    def validate(self, data):
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError("Las contraseñas no coinciden.")
+        return data
     
     def create(self, validated_data):
         validated_data.pop('password_confirm')
         password = validated_data.pop('password')
         
-        # Generar token de verificación
-        token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
-        
         user = User.objects.create(
+            email=validated_data['email'],
             username=validated_data['email'],
-            user_type='patient',
-            email_verification_token=token,
-            **validated_data
+            full_name=validated_data['full_name'],
+            phone_number=validated_data['phone_number'],
+            user_type='patient'
         )
         user.set_password(password)
         user.save()
         
         # Crear perfil de paciente
-        Patient.objects.create(user=user)
+        PatientProfile.objects.create(user=user)
+        
+        # Generar token de verificación y enviar email
+        token = user.generate_verification_token()
+        self.send_verification_email(user, token)
         
         return user
+    
+    def send_verification_email(self, user, token):
+        subject = 'Confirma tu cuenta - Sistema de Citas Médicas'
+        message = f"""
+        Hola {user.full_name},
+        
+        Gracias por registrarte en nuestro sistema de citas médicas.
+        
+        Para activar tu cuenta, haz clic en el siguiente enlace:
+        http://localhost:5173/verify-email/{token}
+        
+        Si no te registraste en nuestro sistema, ignora este mensaje.
+        
+        Saludos,
+        Equipo de Citas Médicas
+        """
+        
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            fail_silently=False,
+        )
 
 class DoctorRegistrationSerializer(serializers.ModelSerializer):
-    professional_license = serializers.CharField()
     specialty = serializers.CharField()
+    professional_license = serializers.CharField()
     
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'email', 'professional_license', 'specialty']
+        fields = ['email', 'full_name', 'specialty', 'professional_license']
     
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Este correo electrónico ya está registrado")
+            raise serializers.ValidationError("Este correo electrónico ya está registrado.")
         return value
     
     def validate_professional_license(self, value):
-        if Doctor.objects.filter(professional_license=value).exists():
-            raise serializers.ValidationError("Esta cédula profesional ya está registrada")
+        if DoctorProfile.objects.filter(professional_license=value).exists():
+            raise serializers.ValidationError("Esta cédula profesional ya está registrada.")
         return value
     
     def create(self, validated_data):
@@ -67,85 +98,102 @@ class DoctorRegistrationSerializer(serializers.ModelSerializer):
         professional_license = validated_data.pop('professional_license')
         
         # Generar contraseña aleatoria
-        password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+        password = DoctorProfile.generate_random_password()
         
         user = User.objects.create(
+            email=validated_data['email'],
             username=validated_data['email'],
+            full_name=validated_data['full_name'],
             user_type='doctor',
-            is_email_verified=True,  # Los médicos se verifican automáticamente
-            **validated_data
+            is_email_verified=True  # Los médicos se verifican automáticamente
         )
         user.set_password(password)
         user.save()
         
         # Crear perfil de médico
-        Doctor.objects.create(
+        DoctorProfile.objects.create(
             user=user,
             specialty=specialty,
             professional_license=professional_license
         )
         
-        # Guardar la contraseña para enviarla por email
-        user.temp_password = password
+        # Enviar credenciales por email
+        self.send_credentials_email(user, password)
         
         return user
+    
+    def send_credentials_email(self, user, password):
+        subject = 'Bienvenido - Credenciales de Acceso'
+        message = f"""
+        Estimado Dr. {user.full_name},
+        
+        Su cuenta médica ha sido creada exitosamente en nuestro sistema.
+        
+        Sus credenciales de acceso son:
+        Email: {user.email}
+        Contraseña: {password}
+        
+        Por favor, inicie sesión y cambie su contraseña lo antes posible.
+        
+        Enlace de acceso: http://localhost:5173/login
+        
+        Saludos,
+        Administración del Sistema
+        """
+        
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            fail_silently=False,
+        )
 
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField()
     
-    def validate(self, attrs):
-        email = attrs.get('email')
-        password = attrs.get('password')
+    def validate(self, data):
+        email = data.get('email')
+        password = data.get('password')
         
         if email and password:
             user = authenticate(username=email, password=password)
-            if not user:
-                raise serializers.ValidationError("Credenciales incorrectas")
-            if not user.is_email_verified:
-                raise serializers.ValidationError("Debes verificar tu correo electrónico antes de iniciar sesión")
-            attrs['user'] = user
-            return attrs
-        raise serializers.ValidationError("Email y contraseña son requeridos")
+            if user:
+                if not user.is_email_verified:
+                    raise serializers.ValidationError("Debe verificar su correo electrónico antes de iniciar sesión.")
+                data['user'] = user
+            else:
+                raise serializers.ValidationError("Credenciales inválidas.")
+        else:
+            raise serializers.ValidationError("Debe proporcionar email y contraseña.")
+        
+        return data
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'first_name', 'last_name', 'email', 'phone', 'user_type', 'is_email_verified']
-        read_only_fields = ['id', 'email', 'user_type', 'is_email_verified']
+        fields = ['id', 'email', 'full_name', 'phone_number', 'user_type']
+        read_only_fields = ['id', 'email', 'user_type']
 
 class PatientProfileSerializer(serializers.ModelSerializer):
-    user = UserProfileSerializer()
+    user = UserProfileSerializer(read_only=True)
     
     class Meta:
-        model = Patient
-        fields = ['user', 'birth_date', 'emergency_contact', 'medical_history']
+        model = PatientProfile
+        fields = '__all__'
 
 class DoctorProfileSerializer(serializers.ModelSerializer):
-    user = UserProfileSerializer()
+    user = UserProfileSerializer(read_only=True)
     specialty_display = serializers.CharField(source='get_specialty_display', read_only=True)
     
     class Meta:
-        model = Doctor
-        fields = ['user', 'specialty', 'specialty_display', 'professional_license', 'consultation_fee', 'bio']
+        model = DoctorProfile
+        fields = '__all__'
 
 class DoctorScheduleSerializer(serializers.ModelSerializer):
-    day_display = serializers.CharField(source='get_day_of_week_display', read_only=True)
+    weekday_display = serializers.CharField(source='get_weekday_display', read_only=True)
     
     class Meta:
         model = DoctorSchedule
-        fields = ['id', 'day_of_week', 'day_display', 'start_time', 'end_time', 'is_available']
-
-class DoctorUnavailabilitySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = DoctorUnavailability
-        fields = ['id', 'date', 'start_time', 'end_time', 'reason', 'created_at']
-        read_only_fields = ['id', 'created_at']
-
-class DoctorPublicSerializer(serializers.ModelSerializer):
-    user = UserProfileSerializer()
-    specialty_display = serializers.CharField(source='get_specialty_display', read_only=True)
-    
-    class Meta:
-        model = Doctor
-        fields = ['id', 'user', 'specialty', 'specialty_display', 'consultation_fee', 'bio']
+        fields = '__all__'
