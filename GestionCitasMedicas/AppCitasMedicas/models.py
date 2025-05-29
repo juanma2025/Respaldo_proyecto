@@ -3,6 +3,7 @@ from django.db import models
 from django.core.validators import RegexValidator
 import secrets
 import string
+import uuid
 
 class User(AbstractUser):
     USER_TYPE_CHOICES = (
@@ -36,9 +37,19 @@ class User(AbstractUser):
         super().save(*args, **kwargs)
     
     def generate_verification_token(self):
-        self.email_verification_token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(50))
+        """Genera un token único para verificación de email"""
+        self.email_verification_token = str(uuid.uuid4())
         self.save()
         return self.email_verification_token
+
+    def verify_email(self):
+        """Marca el email como verificado"""
+        self.is_email_verified = True
+        self.email_verification_token = None  
+        self.save()
+
+    def __str__(self):
+        return self.email
 
 class PatientProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='patient_profile')

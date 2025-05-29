@@ -37,7 +37,8 @@ class PatientRegistrationSerializer(serializers.ModelSerializer):
             username=validated_data['email'],
             full_name=validated_data['full_name'],
             phone_number=validated_data['phone_number'],
-            user_type='patient'
+            user_type='patient',
+            is_email_verified=False  # IMPORTANTE: Email no verificado por defecto
         )
         user.set_password(password)
         user.save()
@@ -53,13 +54,19 @@ class PatientRegistrationSerializer(serializers.ModelSerializer):
     
     def send_verification_email(self, user, token):
         subject = 'Confirma tu cuenta - Sistema de Citas Médicas'
+        
+        # URL para verificación por GET (cuando hacen clic)
+        verification_url = f"http://127.0.0.1:8000/api/auth/verify-email/{token}/"
+        
         message = f"""
         Hola {user.full_name},
         
         Gracias por registrarte en nuestro sistema de citas médicas.
         
         Para activar tu cuenta, haz clic en el siguiente enlace:
-        http://localhost:5173/verify-email/{token}
+        {verification_url}
+        
+        O copia y pega este enlace en tu navegador.
         
         Si no te registraste en nuestro sistema, ignora este mensaje.
         
@@ -75,6 +82,27 @@ class PatientRegistrationSerializer(serializers.ModelSerializer):
             fail_silently=False,
         )
 
+class EmailVerificationSerializer(serializers.Serializer):
+    token = serializers.CharField(max_length=255)
+    
+    def validate_token(self, value):
+        try:
+            user = User.objects.get(
+                email_verification_token=value,
+                is_email_verified=False
+            )
+            return value
+        except User.DoesNotExist:
+            raise serializers.ValidationError(
+                "Token de verificación inválido o ya usado."
+            )
+    
+    def save(self):
+        token = self.validated_data['token']
+        user = User.objects.get(email_verification_token=token)
+        user.verify_email()
+        return user
+    
 class DoctorRegistrationSerializer(serializers.ModelSerializer):
     specialty = serializers.CharField()
     professional_license = serializers.CharField()

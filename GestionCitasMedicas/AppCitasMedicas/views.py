@@ -16,6 +16,9 @@ from .serializers import (
     DoctorScheduleSerializer
 )
 from django.utils import timezone
+from rest_framework import status
+from .serializers import EmailVerificationSerializer
+from django.contrib.auth import authenticate
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -75,6 +78,60 @@ def login(request):
             }
         }, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_view(request):
+    """
+    Vista de login que verifica si el email está confirmado
+    """
+    email = request.data.get('email')
+    password = request.data.get('password')
+    
+    if not email or not password:
+        return Response({
+            'success': False,
+            'message': 'Email y contraseña son requeridos'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Autenticar usuario
+    user = authenticate(username=email, password=password)
+    
+    if user:
+        # Verificar si el email está confirmado
+        if not user.is_email_verified:
+            return Response({
+                'success': False,
+                'message': 'Debes verificar tu email antes de iniciar sesión. Revisa tu bandeja de entrada.',
+                'email_verified': False,
+                'can_resend': True
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Generar tokens JWT
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        
+        return Response({
+            'success': True,
+            'message': 'Login exitoso',
+            'tokens': {
+                'access': access_token,
+                'refresh': str(refresh)
+            },
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'full_name': user.full_name,
+                'user_type': user.user_type,
+                'is_email_verified': user.is_email_verified
+            }
+        }, status=status.HTTP_200_OK)
+    
+    return Response({
+        'success': False,
+        'message': 'Credenciales inválidas'
+    }, status=status.HTTP_401_UNAUTHORIZED)
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -268,3 +325,92 @@ class DoctorScheduleDetail(generics.RetrieveUpdateDestroyAPIView):
             )
         
         instance.delete()
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_email(request):
+    """
+    Verifica el email del usuario usando el token enviado por correo
+    """
+    serializer = EmailVerificationSerializer(data=request.data)
+    
+    if serializer.is_valid():
+        user = serializer.save()
+        return Response({
+            'success': True,
+            'message': 'Email verificado exitosamente. Ya puedes iniciar sesión.',
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'full_name': user.full_name,
+                'is_email_verified': user.is_email_verified
+            }
+        }, status=status.HTTP_200_OK)
+    
+    return Response({
+        'success': False,
+        'errors': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def verify_email_get(request, token):
+    """
+    Verifica el email usando GET (para cuando el usuario hace clic en el enlace)
+    """
+    try:
+        user = User.objects.get(
+            email_verification_token=token,
+            is_email_verified=False
+        )
+        user.verify_email()
+        
+        return Response({
+            'success': True,
+            'message': f'¡Cuenta verificada exitosamente! Bienvenido {user.full_name}',
+            'redirect_url': 'http://localhost:5173/login?verified=true'
+        }, status=status.HTTP_200_OK)
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Token de verificación inválido o ya usado.',
+            'redirect_url': 'http://localhost:5173/verification-error'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def resend_verification_email(request):
+    """
+    Reenvía el email de verificación
+    """
+    email = request.data.get('email')
+    
+    if not email:
+        return Response({
+            'success': False,
+            'message': 'Email es requerido'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        user = User.objects.get(email=email, is_email_verified=False)
+        
+        # Generar nuevo token
+        token = user.generate_verification_token()
+        
+        # Reenviar email (usar el mismo método del serializer)
+        serializer = PatientRegistrationSerializer()
+        serializer.send_verification_email(user, token)
+        
+        return Response({
+            'success': True,
+            'message': 'Email de verificación reenviado exitosamente'
+        }, status=status.HTTP_200_OK)
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Usuario no encontrado o ya verificado'
+        }, status=status.HTTP_404_NOT_FOUND)
