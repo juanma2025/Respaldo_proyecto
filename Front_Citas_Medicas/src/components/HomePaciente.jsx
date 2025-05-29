@@ -69,10 +69,13 @@ const AgendarCita = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
     const fetchEspecialidades = async () => {
       try {
         setIsLoading(true);
-        const response = await axios.get(`${apiUrl}especialidades/`);
+        // Usar la ruta correcta según tus URLs de AppCitasMedicas
+        const response = await axios.get(`${apiUrl}auth/specialties/`);
+        console.log('Especialidades response:', response.data); // Para debug
         setEspecialidades(response.data);
       } catch (err) {
-        setError('Error al cargar las especialidades');
+        console.error('Error fetching especialidades:', err); // Para debug
+        setError('Error al cargar las especialidades: ' + (err.response?.data?.detail || err.message));
       } finally {
         setIsLoading(false);
       }
@@ -86,13 +89,16 @@ const AgendarCita = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
       if (selectedEspecialidad) {
         try {
           setIsLoading(true);
+          // Usar la ruta correcta según tus URLs de AppCitasMedicas
           const response = await axios.get(
-            `${apiUrl}medicos/?especialidad=${selectedEspecialidad}`
+            `${apiUrl}auth/doctors/?specialty=${selectedEspecialidad}`
           );
+          console.log('Médicos response:', response.data); // Para debug
           setMedicos(response.data);
           setSelectedMedico('');
         } catch (err) {
-          setError('Error al cargar los médicos');
+          console.error('Error fetching médicos:', err); // Para debug
+          setError('Error al cargar los médicos: ' + (err.response?.data?.detail || err.message));
         } finally {
           setIsLoading(false);
         }
@@ -119,7 +125,6 @@ const AgendarCita = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
       appointment_date: fecha,
       appointment_time: hora,
       reason: motivo,
-      duration_minutes: duracion,
     };
 
     try {
@@ -135,9 +140,7 @@ const AgendarCita = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
       setSelectedMedico('');
       setFecha('');
       setHora('');
-      setHora('');
       setMotivo('');
-      setDuracion(30);
     } catch (err) {
       const msg =
         err.response?.data?.detail ||
@@ -165,9 +168,9 @@ const AgendarCita = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
               disabled={isLoading}
             >
               <option value="">Seleccione una especialidad</option>
-              {especialidades.map((esp) => (
-                <option key={esp.id} value={esp.id}>
-                  {esp.nombre}
+              {especialidades.map((esp, index) => (
+                <option key={esp.value || index} value={esp.value}>
+                  {esp.label}
                 </option>
               ))}
             </select>
@@ -183,9 +186,12 @@ const AgendarCita = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
               disabled={!selectedEspecialidad || isLoading}
             >
               <option value="">Seleccione un médico</option>
-              {medicos.map((medico) => (
-                <option key={medico.id} value={medico.id}>
-                  {medico.user?.full_name || medico.user?.first_name + " " + medico.user?.last_name}
+              {medicos.map((medico, index) => (
+                <option key={medico.id || index} value={medico.id}>
+                  {medico.user?.full_name || 
+                   `${medico.user?.first_name} ${medico.user?.last_name}` ||
+                   medico.full_name ||
+                   `${medico.first_name} ${medico.last_name}`}
                 </option>
               ))}
             </select>
@@ -227,21 +233,6 @@ const AgendarCita = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
               placeholder="Motivo de la cita"
             />
           </div>
-
-          <div>
-            <label className="block text-gray-900 font-medium mb-2">Duración (minutos)</label>
-            <input
-              type="number"
-              value={duracion}
-              onChange={(e) => setDuracion(e.target.value)}
-              required
-              min={10}
-              className="w-full border border-gray-300 rounded-lg p-2"
-              disabled={isLoading}
-              placeholder="Duración en minutos"
-            />
-          </div>
-
           <button
             type="submit"
             className="w-full bg-indigo-700 text-white font-medium py-2 rounded-lg hover:bg-indigo-800 transition disabled:opacity-50"
