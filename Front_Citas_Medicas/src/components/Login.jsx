@@ -1,6 +1,6 @@
 // src/components/Login.jsx
-import React, { useState } from "react";
 import axios from "axios";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function Login() {
@@ -17,19 +17,40 @@ export default function Login() {
     e.preventDefault();
     setMensaje("");
     setLoading(true);
+    
     try {
       const response = await axios.post(
         `${import.meta.env.VITE_API_URL}auth/login/`,
         form
       );
+      
       setMensaje("Login exitoso");
-      // Aquí puedes guardar el token o datos del usuario si tu backend los retorna
-      // Por ejemplo: localStorage.setItem('token', response.data.token);
-      // Redirige a la página principal o dashboard
-      // navigate('/dashboard');
+      
+      // Guardar datos del usuario en localStorage
+      const userData = response.data.user;
+      localStorage.setItem('user', JSON.stringify(userData));
+      localStorage.setItem('token', userData.token);
+      localStorage.setItem('userType', userData.user_type);
+      
+      // Configurar axios para usar el token en futuras peticiones
+      axios.defaults.headers.common['Authorization'] = `Token ${userData.token}`;
+      
+      // Redirigir según el tipo de usuario
+      setTimeout(() => {
+        if (userData.user_type === 'patient') {
+          navigate('/dashboard/patient');
+        } else if (userData.user_type === 'doctor') {
+          navigate('/dashboard/doctor');
+        } else {
+          navigate('/dashboard'); // fallback genérico
+        }
+      }, 1000); // Pequeña pausa para mostrar el mensaje de éxito
+      
     } catch (error) {
       if (error.response?.data?.detail) {
         setMensaje(error.response.data.detail);
+      } else if (error.response?.data?.message) {
+        setMensaje(error.response.data.message);
       } else {
         setMensaje("Correo o contraseña incorrectos");
       }
@@ -50,7 +71,6 @@ export default function Login() {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="relative">
             <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-              {/* Icono de correo */}
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-5 w-5"
@@ -78,7 +98,6 @@ export default function Login() {
           </div>
           <div className="relative">
             <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-              {/* Icono de candado */}
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-5 w-5"
@@ -107,40 +126,40 @@ export default function Login() {
           <div className="flex justify-end">
             <a
               href="#"
-                className="text-indigo-500 text-sm hover:underline"
+              className="text-indigo-500 text-sm hover:underline"
             >
-                ¿Olvidaste tu contraseña?
+              ¿Olvidaste tu contraseña?
             </a>
-            </div>
-            <button
+          </div>
+          <button
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-700 text-white py-3 rounded-md font-semibold text-lg hover:bg-indigo-800 transition"
-            >
+            className="w-full bg-indigo-700 text-white py-3 rounded-md font-semibold text-lg hover:bg-indigo-800 transition disabled:opacity-50"
+          >
             {loading ? "Ingresando..." : "Iniciar Sesión"}
-            </button>
+          </button>
         </form>
         <div className="mt-6 text-center text-sm text-gray-700">
-            ¿Necesitas crear una cuenta?
-            <span
+          ¿Necesitas crear una cuenta?
+          <span
             onClick={() => navigate("/register/patient")}
             className="text-indigo-700 ml-1 hover:underline cursor-pointer"
-            >
+          >
             Crear cuenta
-            </span>
+          </span>
         </div>
         {mensaje && (
-            <p
+          <p
             className={`mt-4 text-center ${
-                mensaje === "Login exitoso"
+              mensaje === "Login exitoso"
                 ? "text-green-600"
                 : "text-red-500"
             }`}
-            >
+          >
             {mensaje}
-            </p>
+          </p>
         )}
-        </div>
+      </div>
     </div>
-    );
+  );
 }
