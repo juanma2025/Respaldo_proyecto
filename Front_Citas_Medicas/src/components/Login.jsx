@@ -1,4 +1,3 @@
-// src/components/Login.jsx
 import axios from "axios";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -38,7 +37,7 @@ export default function Login() {
       // Redirigir según el tipo de usuario
       setTimeout(() => {
         if (userData.user_type === 'patient') {
-          navigate('appointments/create/');
+          navigate('/appointments/create/');
         } else if (userData.user_type === 'doctor') {
           navigate('/dashboard/doctor');
         } else {
@@ -142,7 +141,7 @@ export default function Login() {
         <div className="mt-6 text-center text-sm text-gray-700">
           ¿Necesitas crear una cuenta?
           <span
-            onClick={() => navigate("/register/patient")}
+            onClick={() => navigate("/auth/register/patient/")}
             className="text-indigo-700 ml-1 hover:underline cursor-pointer"
           >
             Crear cuenta

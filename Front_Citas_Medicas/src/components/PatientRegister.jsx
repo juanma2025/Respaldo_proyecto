@@ -147,7 +147,7 @@ const CrearUsuario = () => {
         <p className="text-center text-gray-700 mt-4">
           ¿Ya tienes una cuenta?{" "}
           <span
-            onClick={() => navigate("/login-paciente")}
+            onClick={() => navigate("auth/login/")}
             className="text-blue-600 underline cursor-pointer"
           >
             Iniciar sesión
