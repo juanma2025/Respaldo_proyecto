@@ -1,8 +1,8 @@
-import React from "react";
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import RegistrarPaciente from './components/PatientRegister';
+import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import RegistrarMedico from './components/DoctorRegister';
-import IniciarSesion from './components/Login'
+import IniciarSesion from './components/Login';
+import PatientDashboard from './components/PatientDashboard';
+import RegistrarPaciente from './components/PatientRegister';
 
 
 function App() {
@@ -41,7 +41,7 @@ function App() {
           <Route path="auth/register/patient/" element={<RegistrarPaciente />} />
           <Route path="auth/register/doctor/" element={<RegistrarMedico />} />
           <Route path="auth/login/" element={<IniciarSesion />} />
-
+          <Route path="dashboard/patient" element={<PatientDashboard />} />
         </Routes>
         </div>
       </div>
