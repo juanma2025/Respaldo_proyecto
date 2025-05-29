@@ -8,8 +8,8 @@ urlpatterns = [
     path('login/', views.login, name='login'),
     path('logout/', views.logout, name='logout'),
     path('verify-email/', views.verify_email, name='verify_email'),
-    path('auth/verify-email/<str:token>/', views.verify_email_get, name='verify_email_get'),
-    path('auth/resend-verification/', views.resend_verification_email, name='resend_verification'),
+    path('verify-email/<str:token>/', views.verify_email_get, name='verify_email_get'),
+    path('resend-verification/', views.resend_verification_email, name='resend_verification'),
     
     # Perfil de usuario
     path('profile/', views.profile, name='profile'),
