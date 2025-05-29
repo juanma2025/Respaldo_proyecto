@@ -38,7 +38,7 @@ export default function Login() {
       // Redirigir según el tipo de usuario
       setTimeout(() => {
         if (userData.user_type === 'patient') {
-          navigate('/dashboard/patient');
+          navigate('appointments/create/');
         } else if (userData.user_type === 'doctor') {
           navigate('/dashboard/doctor');
         } else {
