@@ -3,6 +3,7 @@ import RegistrarMedico from './components/DoctorRegister';
 import IniciarSesion from './components/Login';
 import RegistrarPaciente from './components/PatientRegister';
 import HomePaciente from './components/HomePaciente';
+import HomeDoctor from './components/HomeDoctor';
 
 
 function Landing() {
@@ -44,6 +45,7 @@ function App() {
         <Route path="/auth/register/patient/" element={<RegistrarPaciente />} />
         <Route path="/auth/register/doctor/" element={<RegistrarMedico />} />
         <Route path="/appointments/create/" element={<HomePaciente />} />
+        <Route path="/appointments/doctor/" element={<HomeDoctor />} />
       </Routes>
     </Router>
   );

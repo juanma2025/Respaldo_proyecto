@@ -137,3 +137,58 @@ class AppointmentStatsSerializer(serializers.Serializer):
     completed_appointments = serializers.IntegerField()
     cancelled_appointments = serializers.IntegerField()
     upcoming_appointments = serializers.IntegerField()
+
+
+class DoctorUnavailabilityRangeSerializer(serializers.Serializer):
+    """Serializer para marcar indisponibilidad en rangos de fechas"""
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField()
+    reason = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    force_block = serializers.BooleanField(default=False)
+    
+    def validate(self, data):
+        # Validar que la fecha de inicio sea menor o igual a la de fin
+        if data['start_date'] > data['end_date']:
+            raise serializers.ValidationError("La fecha de inicio debe ser menor o igual a la fecha de fin.")
+        
+        # Validar que las fechas no sean pasadas
+        if data['start_date'] < timezone.now().date():
+            raise serializers.ValidationError("No puede marcar indisponibilidad en fechas pasadas.")
+        
+        # Validar que la hora de inicio sea menor a la hora de fin
+        if data['start_time'] >= data['end_time']:
+            raise serializers.ValidationError("La hora de inicio debe ser menor a la hora de fin.")
+        
+        # Validar que el rango no sea demasiado amplio (opcional)
+        date_diff = (data['end_date'] - data['start_date']).days
+        if date_diff > 365:  # Máximo un año
+            raise serializers.ValidationError("El rango de fechas no puede ser mayor a un año.")
+        
+        return data
+
+class ConflictCheckSerializer(serializers.Serializer):
+    """Serializer para verificar conflictos de horarios"""
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField()
+
+class AppointmentStatusUpdateSerializer(serializers.Serializer):
+    """Serializer para actualizar estado de citas"""
+    status = serializers.ChoiceField(choices=[
+        ('scheduled', 'Programada'),
+        ('confirmed', 'Confirmada'),
+        ('completed', 'Completada'),
+        ('cancelled', 'Cancelada')
+    ])
+    reason = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+class ConflictingAppointmentSerializer(serializers.Serializer):
+    """Serializer para representar citas en conflicto"""
+    id = serializers.IntegerField()
+    date = serializers.DateField()
+    time = serializers.TimeField()
+    patient_name = serializers.CharField()
+    reason = serializers.CharField()
