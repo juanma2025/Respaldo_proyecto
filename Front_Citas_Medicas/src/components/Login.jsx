@@ -58,9 +58,9 @@ export default function Login() {
         
         // Guardar nombre de usuario de forma flexible
         const fullName = userData.full_name || 
-                         `${userData.first_name || ''} ${userData.last_name || ''}`.trim() ||
-                         userData.email ||
-                         'Usuario';
+                        `${userData.first_name || ''} ${userData.last_name || ''}`.trim() ||
+                        userData.email ||
+                        'Usuario';
         localStorage.setItem('user_full_name', fullName);
         
         // Guardar tipo de usuario
@@ -158,7 +158,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-500 via-gray-950 to-gray-500">
       <div className="w-full max-w-md p-8 rounded-2xl shadow-2xl bg-white/95 backdrop-blur-sm">
         {/* Header */}
         <div className="text-center mb-8">

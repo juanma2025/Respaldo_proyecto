@@ -2,25 +2,53 @@ import axios from 'axios';
 import React, { useEffect, useState } from 'react';
 
 // Sidebar component
-const Sidebar = ({ userName, avatarUrl }) => (
+const Sidebar = ({ userName, avatarUrl, currentSection, setSection }) => (
   <aside className="h-full w-64 bg-white border-r flex flex-col justify-between py-6 px-4">
     <div>
       <h1 className="text-2xl font-bold mb-8 flex items-center gap-2 text-indigo-700">
         <span className="text-3xl">🩺</span> Cita Salud
       </h1>
       <nav className="flex flex-col gap-2">
-        <a href="#" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700 font-semibold">
+        <button
+          onClick={() => setSection('mis-citas')}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold ${
+            currentSection === 'mis-citas'
+              ? 'bg-indigo-50 text-indigo-700'
+              : 'text-gray-600 hover:bg-indigo-50'
+          }`}
+        >
           <span>📅</span> Mis Citas
-        </a>
-        <a href="#" className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-600 hover:bg-indigo-50">
-          <span>💧</span> Historial Médico
-        </a>
-        <a href="#" className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-600 hover:bg-indigo-50">
-          <span>🩺</span> Servicios
-        </a>
-        <a href="#" className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-600 hover:bg-indigo-50">
+        </button>
+        <button
+          onClick={() => setSection('agendar')}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold ${
+            currentSection === 'agendar'
+              ? 'bg-indigo-50 text-indigo-700'
+              : 'text-gray-600 hover:bg-indigo-50'
+          }`}
+        >
+          <span>📘</span> Agendar Citas
+        </button>
+        <button
+          onClick={() => setSection('cancelar')}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold ${
+            currentSection === 'cancelar'
+              ? 'bg-indigo-50 text-indigo-700'
+              : 'text-gray-600 hover:bg-indigo-50'
+          }`}
+        >
+          <span>🚫</span> Cancelar Citas
+        </button>
+        <button
+          onClick={() => setSection('configuracion')}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold ${
+            currentSection === 'configuracion'
+              ? 'bg-indigo-50 text-indigo-700'
+              : 'text-gray-600 hover:bg-indigo-50'
+          }`}
+        >
           <span>⚙️</span> Configuración
-        </a>
+        </button>
       </nav>
     </div>
     <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-indigo-50">
@@ -38,19 +66,165 @@ const Sidebar = ({ userName, avatarUrl }) => (
 const Header = () => (
   <header className="h-16 flex items-center justify-between px-8 border-b bg-white">
     <nav className="flex gap-8">
-      <a href="#" className="text-indigo-700 font-semibold border-b-2 border-indigo-700 pb-2">Home</a>
-      <a href="#" className="text-gray-600 hover:text-indigo-700">Appointments</a>
-      <a href="#" className="text-gray-600 hover:text-indigo-700">Settings</a>
+      <span className="text-indigo-700 font-semibold border-b-2 border-indigo-700 pb-2">Home</span>
     </nav>
     <div className="flex items-center gap-4">
       <button className="text-gray-500 hover:text-indigo-700">
         <svg width="22" height="22" fill="none" stroke="currentColor"><circle cx="10" cy="10" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
       </button>
-      <img src="https://randomuser.me/api/portraits/women/44.jpg" alt="avatar" className="w-9 h-9 rounded-full" />
+      <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="avatar" className="w-9 h-9 rounded-full" />
     </div>
   </header>
 );
 
+// Mis Citas
+const MisCitas = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
+  const [citas, setCitas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchCitas = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const token = localStorage.getItem('auth_token');
+        const response = await axios.get(`${apiUrl}appointments/mine/`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        setCitas(response.data);
+      } catch (err) {
+        setError('Error al cargar tus citas');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCitas();
+  }, [apiUrl]);
+
+  if (loading) return <div className="text-center py-8">Cargando citas...</div>;
+  if (error) return <div className="text-center text-red-600 py-8">{error}</div>;
+  if (citas.length === 0) return <div className="text-center py-8">No tienes citas registradas.</div>;
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4 text-indigo-700">Mis Citas</h2>
+      <ul className="space-y-4">
+        {citas.map((cita) => (
+          <li key={cita.id} className="p-4 bg-gray-100 rounded-lg shadow">
+            <div><strong>Especialidad:</strong> {cita.specialty_name || cita.specialty || 'N/A'}</div>
+            <div><strong>Médico:</strong> {cita.doctor_name || cita.doctor || 'N/A'}</div>
+            <div><strong>Fecha:</strong> {cita.appointment_date}</div>
+            <div><strong>Hora:</strong> {cita.appointment_time}</div>
+            <div><strong>Motivo:</strong> {cita.reason}</div>
+            <div><strong>Estado:</strong> {cita.status || 'Pendiente'}</div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+// Cancelar Citas
+const CancelarCitas = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
+  const [citas, setCitas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [mensaje, setMensaje] = useState('');
+
+  useEffect(() => {
+    const fetchCitas = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const token = localStorage.getItem('auth_token');
+        const response = await axios.get(`${apiUrl}appointments/mine/`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        setCitas(response.data);
+      } catch (err) {
+        setError('Error al cargar tus citas');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCitas();
+  }, [apiUrl, mensaje]);
+
+  const cancelarCita = async (id) => {
+    setMensaje('');
+    setError('');
+    try {
+      const token = localStorage.getItem('auth_token');
+      await axios.post(`${apiUrl}appointments/${id}/cancel/`, {}, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      setMensaje('Cita cancelada correctamente.');
+    } catch (err) {
+      setError('No se pudo cancelar la cita.');
+    }
+  };
+
+  if (loading) return <div className="text-center py-8">Cargando citas...</div>;
+  if (error) return <div className="text-center text-red-600 py-8">{error}</div>;
+  if (citas.length === 0) return <div className="text-center py-8">No tienes citas para cancelar.</div>;
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4 text-indigo-700">Cancelar Citas</h2>
+      {mensaje && <div className="mb-4 text-green-600">{mensaje}</div>}
+      <ul className="space-y-4">
+        {citas
+          .filter((cita) => cita.status !== 'Cancelada')
+          .map((cita) => (
+            <li key={cita.id} className="p-4 bg-gray-100 rounded-lg shadow flex justify-between items-center">
+              <div>
+                <div><strong>Especialidad:</strong> {cita.specialty_name || cita.specialty || 'N/A'}</div>
+                <div><strong>Médico:</strong> {cita.doctor_name || cita.doctor || 'N/A'}</div>
+                <div><strong>Fecha:</strong> {cita.appointment_date}</div>
+                <div><strong>Hora:</strong> {cita.appointment_time}</div>
+                <div><strong>Motivo:</strong> {cita.reason}</div>
+                <div><strong>Estado:</strong> {cita.status || 'Pendiente'}</div>
+              </div>
+              <button
+                onClick={() => cancelarCita(cita.id)}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+              >
+                Cancelar
+              </button>
+            </li>
+          ))}
+      </ul>
+    </div>
+  );
+};
+
+// Configuración
+const Configuracion = () => (
+  <div>
+    <h2 className="text-xl font-bold mb-4 text-indigo-700">Configuración</h2>
+    <div className="space-y-4">
+      <div className="p-4 bg-gray-100 rounded-lg shadow">
+        <strong>Nombre:</strong> {localStorage.getItem('user_full_name') || 'Usuario'}
+      </div>
+      <div className="p-4 bg-gray-100 rounded-lg shadow">
+        <strong>Email:</strong> {localStorage.getItem('user_email') || 'No definido'}
+      </div>
+      {/* Puedes agregar más configuraciones aquí */}
+    </div>
+  </div>
+);
+
+// AgendarCita: tu componente original (sin cambios)
 const AgendarCita = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
   const [especialidades, setEspecialidades] = useState([]);
   const [medicos, setMedicos] = useState([]);
@@ -424,14 +598,18 @@ const AgendarCita = ({ apiUrl = import.meta.env.VITE_API_URL }) => {
 const HomePaciente = () => {
   const userName = localStorage.getItem('user_full_name') || 'Usuario';
   const avatarUrl = localStorage.getItem('user_avatar') || 'https://randomuser.me/api/portraits/men/32.jpg';
+  const [section, setSection] = useState('mis-citas');
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar userName={userName} avatarUrl={avatarUrl} />
+      <Sidebar userName={userName} avatarUrl={avatarUrl} currentSection={section} setSection={setSection} />
       <div className="flex-1 flex flex-col">
         <Header />
-        <main className="flex-1 flex flex-col items-center justify-center bg-gray-50">
-          <AgendarCita />
+        <main className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-8">
+          {section === 'mis-citas' && <MisCitas />}
+          {section === 'agendar' && <AgendarCita />}
+          {section === 'cancelar' && <CancelarCitas />}
+          {section === 'configuracion' && <Configuracion />}
         </main>
       </div>
     </div>

@@ -133,7 +133,7 @@ const CrearMedico = () => {
         <p className="text-center text-gray-700 mt-4">
           ¿Ya tienes una cuenta?{" "}
           <span
-            onClick={() => navigate("auth/login/")}
+            onClick={() => navigate("/auth/login/")}
             className="text-blue-600 underline cursor-pointer"
           >
             Iniciar sesión
@@ -153,6 +153,7 @@ const InputField = ({ icon, ...props }) => (
       required
     />
   </div>
+  
 );
 
 export default CrearMedico;
