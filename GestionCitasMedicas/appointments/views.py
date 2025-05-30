@@ -67,37 +67,225 @@ def patient_appointments(request):
     serializer = AppointmentSerializer(appointments, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
-@api_view(['PUT'])
+class PatientAppointmentListView(generics.ListAPIView):
+    """
+    Vista para que los pacientes vean todas sus citas
+    Permite filtros por estado y fechas
+    """
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        # Verificar que sea un paciente
+        if self.request.user.user_type != 'patient':
+            raise PermissionDenied("Solo los pacientes pueden ver sus citas.")
+        
+        # Obtener el perfil del paciente
+        patient_profile = get_object_or_404(PatientProfile, user=self.request.user)
+        
+        # Queryset base
+        queryset = Appointment.objects.filter(patient=patient_profile)
+        
+        # Filtros opcionales desde query params
+        status_filter = self.request.query_params.get('status', None)
+        date_from = self.request.query_params.get('date_from', None)
+        date_to = self.request.query_params.get('date_to', None)
+        upcoming_only = self.request.query_params.get('upcoming', None)
+        
+        # Filtrar por estado
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        # Filtrar por rango de fechas
+        if date_from:
+            try:
+                date_from = timezone.datetime.strptime(date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(appointment_date__gte=date_from)
+            except ValueError:
+                pass  # Ignorar formato inválido
+        
+        if date_to:
+            try:
+                date_to = timezone.datetime.strptime(date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(appointment_date__lte=date_to)
+            except ValueError:
+                pass  # Ignorar formato inválido
+        
+        # Solo citas futuras
+        if upcoming_only and upcoming_only.lower() == 'true':
+            queryset = queryset.filter(
+                appointment_date__gte=timezone.now().date(),
+                status__in=['scheduled', 'confirmed']
+            )
+        
+        return queryset.order_by('-appointment_date', '-appointment_time')
+    
+    def list(self, request, *args, **kwargs):
+        """
+        Personaliza la respuesta para incluir estadísticas
+        """
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        
+        # Calcular estadísticas
+        total_appointments = queryset.count()
+        upcoming_appointments = queryset.filter(
+            appointment_date__gte=timezone.now().date(),
+            status__in=['scheduled', 'confirmed']
+        ).count()
+        
+        # Próxima cita
+        next_appointment = queryset.filter(
+            appointment_date__gte=timezone.now().date(),
+            status__in=['scheduled', 'confirmed']
+        ).first()
+        
+        next_appointment_data = None
+        if next_appointment:
+            next_appointment_data = AppointmentSerializer(next_appointment).data
+        
+        return Response({
+            'appointments': serializer.data,
+            'statistics': {
+                'total_appointments': total_appointments,
+                'upcoming_appointments': upcoming_appointments,
+                'next_appointment': next_appointment_data
+            }
+        })
+
+@api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
-def cancel_appointment(request, appointment_id):
+def cancel_patient_appointment(request, appointment_id):
+    """
+    Vista para que los pacientes cancelen sus propias citas
+    Con validación de 24 horas de anticipación
+    """
+    # Verificar que sea un paciente
+    if request.user.user_type != 'patient':
+        return Response(
+            {'error': 'Solo los pacientes pueden cancelar sus citas.'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    # Obtener la cita
     appointment = get_object_or_404(Appointment, id=appointment_id)
     
-    # Verificar permisos
-    if (request.user.user_type == 'patient' and appointment.patient.user != request.user) or \
-       (request.user.user_type == 'doctor' and appointment.doctor.user != request.user):
-        return Response({'error': 'No tiene permisos para cancelar esta cita.'}, 
-                       status=status.HTTP_403_FORBIDDEN)
+    # Verificar que la cita pertenezca al paciente
+    if appointment.patient.user != request.user:
+        return Response(
+            {'error': 'No tienes permisos para cancelar esta cita.'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
     
+    # Verificar que la cita se pueda cancelar (estado)
     if not appointment.can_be_cancelled:
-        return Response({'error': 'Esta cita no puede ser cancelada.'}, 
-                       status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {'error': f'No se puede cancelar una cita con estado "{appointment.get_status_display()}".'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
     
-    # Guardar historial
+    # Verificar la regla de 24 horas
+    appointment_datetime = timezone.datetime.combine(
+        appointment.appointment_date, 
+        appointment.appointment_time
+    )
+    appointment_datetime = timezone.make_aware(appointment_datetime)
+    
+    # Calcular 24 horas antes de la cita
+    time_limit = appointment_datetime - timedelta(hours=24)
+    current_time = timezone.now()
+    
+    if current_time >= time_limit:
+        hours_remaining = (appointment_datetime - current_time).total_seconds() / 3600
+        return Response({
+            'error': 'No se puede cancelar la cita. Debe cancelarse con al menos 24 horas de anticipación.',
+            'hours_remaining': round(hours_remaining, 1),
+            'cancellation_deadline': time_limit.isoformat()
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Obtener razón de cancelación (opcional)
+    cancellation_reason = request.data.get('reason', 'Cancelada por el paciente')
+    
+    # Crear registro en el historial
     AppointmentHistory.objects.create(
         appointment=appointment,
         previous_status=appointment.status,
         new_status='cancelled',
-        changed_by=request.user.user_type,
-        change_reason=request.data.get('reason', '')
+        changed_by='patient',
+        change_reason=cancellation_reason
     )
     
+    # Actualizar el estado de la cita
     appointment.status = 'cancelled'
     appointment.save()
     
+    # Serializar la cita actualizada
     serializer = AppointmentSerializer(appointment)
+    
     return Response({
         'message': 'Cita cancelada exitosamente.',
-        'appointment': serializer.data
+        'appointment': serializer.data,
+        'cancelled_at': timezone.now().isoformat()
+    }, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def patient_appointment_detail(request, appointment_id):
+    """
+    Vista para ver los detalles de una cita específica del paciente
+    """
+    # Verificar que sea un paciente
+    if request.user.user_type != 'patient':
+        return Response(
+            {'error': 'Solo los pacientes pueden ver sus citas.'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    # Obtener la cita
+    appointment = get_object_or_404(Appointment, id=appointment_id)
+    
+    # Verificar que la cita pertenezca al paciente
+    if appointment.patient.user != request.user:
+        return Response(
+            {'error': 'No tienes permisos para ver esta cita.'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    # Serializar la cita
+    serializer = AppointmentSerializer(appointment)
+    
+    # Verificar si se puede cancelar (información adicional)
+    can_cancel = False
+    cancellation_info = {}
+    
+    if appointment.can_be_cancelled:
+        appointment_datetime = timezone.datetime.combine(
+            appointment.appointment_date, 
+            appointment.appointment_time
+        )
+        appointment_datetime = timezone.make_aware(appointment_datetime)
+        
+        time_limit = appointment_datetime - timedelta(hours=24)
+        current_time = timezone.now()
+        
+        if current_time < time_limit:
+            can_cancel = True
+            hours_until_limit = (time_limit - current_time).total_seconds() / 3600
+            cancellation_info = {
+                'can_cancel_until': time_limit.isoformat(),
+                'hours_remaining_to_cancel': round(hours_until_limit, 1)
+            }
+        else:
+            hours_until_appointment = (appointment_datetime - current_time).total_seconds() / 3600
+            cancellation_info = {
+                'cancellation_deadline_passed': True,
+                'hours_until_appointment': round(hours_until_appointment, 1)
+            }
+    
+    return Response({
+        'appointment': serializer.data,
+        'can_cancel': can_cancel,
+        'cancellation_info': cancellation_info
     }, status=status.HTTP_200_OK)
 
 # Vistas para médicos

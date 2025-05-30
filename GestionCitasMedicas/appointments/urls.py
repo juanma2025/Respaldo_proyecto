@@ -5,7 +5,9 @@ urlpatterns = [
     # Gestión de citas para pacientes
     path('create/', views.create_appointment, name='create_appointment'),
     path('patient/', views.patient_appointments, name='patient_appointments'),
-    path('cancel/<int:appointment_id>/', views.cancel_appointment, name='cancel_appointment'),
+    path('patient/appointments/', views.PatientAppointmentListView.as_view(), name='patient-appointments'),
+    path('patient/appointments/<int:appointment_id>/', views.patient_appointment_detail, name='patient-appointment-detail'),
+    path('patient/appointments/<int:appointment_id>/cancel/', views.cancel_patient_appointment, name='cancel-appointment'),
     
     # Gestión de citas para médicos
     path('doctor/', views.doctor_appointments, name='doctor_appointments'),
