@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken,TokenError
 from django.shortcuts import get_object_or_404
 from .models import User, PatientProfile, DoctorProfile, DoctorSchedule
 from .serializers import (
@@ -19,6 +19,9 @@ from django.utils import timezone
 from rest_framework import status
 from .serializers import EmailVerificationSerializer
 from django.contrib.auth import authenticate
+
+
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -136,13 +139,17 @@ def login_view(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout(request):
+    refresh_token = request.data.get("refresh_token")
+
+    if not refresh_token:
+        return Response({'error': 'Falta el token de refresco.'}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
-        refresh_token = request.data["refresh_token"]
         token = RefreshToken(refresh_token)
         token.blacklist()
         return Response({'message': 'Sesión cerrada exitosamente.'}, status=status.HTTP_200_OK)
-    except Exception as e:
-        return Response({'error': 'Token inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+    except TokenError:
+        return Response({'error': 'Token inválido o ya fue usado.'}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

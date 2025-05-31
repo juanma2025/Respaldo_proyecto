@@ -11,16 +11,17 @@ from AppCitasMedicas.models import DoctorProfile, PatientProfile, DoctorSchedule
 from .serializers import (
     AppointmentSerializer,
     CreateAppointmentSerializer,
-    DoctorUnavailabilitySerializer,
+    DoctorUnavailabilitySerializer,DoctorUnavailability,
     AppointmentHistorySerializer,
     DoctorAvailabilitySerializer,
     AppointmentStatsSerializer
 )
 from datetime import datetime, timedelta, time
 from django.db import transaction
+from rest_framework import generics, status
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from datetime import timedelta
 
-
-# Vistas para pacientes
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_appointment(request):
