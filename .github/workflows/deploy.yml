@@ -11,21 +11,20 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
-
+        uses: actions/checkout@v4  
       - name: Set up Docker Buildx
-        uses: actions/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v3  
 
       - name: Login to Dockerhub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3  
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push Docker image
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/Citas-backend:latest .
-          docker push ${{ secrets.DOCKER_USERNAME }}/Citas-backend:latest
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/citas-backend:latest .
+          docker push ${{ secrets.DOCKER_USERNAME }}/citas-backend:latest
 
       - name: Setup SSH
         run: |
@@ -36,10 +35,10 @@ jobs:
 
       - name: Deploy to AWS EC2
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.AWS_EC2_IP }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{ secrets.AWS_EC2_IP }} << EOF
             docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
-            docker pull ${{ secrets.DOCKER_USERNAME }}/Citas-backend:latest
+            docker pull ${{ secrets.DOCKER_USERNAME }}/citas-backend:latest
             docker stop citas-backend || true
             docker rm citas-backend || true
-            docker run -d --name citas-backend -p 80:8000 ${{ secrets.DOCKER_USERNAME }}/Citas-backend:latest
+            docker run -d --name citas-backend -p 80:8000 ${{ secrets.DOCKER_USERNAME }}/citas-backend:latest
           EOF
