@@ -13,7 +13,6 @@ function formatTime(time) {
 
 export default function HomeDoctor() {
   const [calendarMonth, setCalendarMonth] = useState(new Date());
-  const [unavailabilities, setUnavailabilities] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [selectedRange, setSelectedRange] = useState({
     start_date: "",
@@ -28,31 +27,25 @@ export default function HomeDoctor() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Cargar indisponibilidades y citas del mes
+  // Cargar citas del mes
   useEffect(() => {
-    fetchUnavailabilities();
     fetchAppointments();
     // eslint-disable-next-line
   }, [calendarMonth]);
 
-  const fetchUnavailabilities = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}/unavailable/list/`, {
-        withCredentials: true,
-      });
-      setUnavailabilities(res.data);
-    } catch (err) {
-      setUnavailabilities([]);
-    }
-  };
-
   const fetchAppointments = async () => {
     try {
+      const token = localStorage.getItem('auth_token');
       const year = calendarMonth.getFullYear();
       const month = String(calendarMonth.getMonth() + 1).padStart(2, "0");
       const res = await axios.get(
         `${API_BASE}/doctor/?date_from=${year}-${month}-01`,
-        { withCredentials: true }
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          withCredentials: true,
+        }
       );
       setAppointments(res.data);
     } catch (err) {
@@ -78,27 +71,34 @@ export default function HomeDoctor() {
     setMessage("");
     setConflicts([]);
     setShowConflict(false);
-    const body = {
-      ...selectedRange,
-      start_time: formatTime(selectedRange.start_time),
-      end_time: formatTime(selectedRange.end_time),
-    };
-    try {
-      const res = await axios.post(
-        `${API_BASE}/unavailable/check-conflicts/`,
-        body,
-        { withCredentials: true }
-      );
-      if (res.data.has_conflicts) {
-        setConflicts(res.data.conflicting_appointments);
-        setShowConflict(true);
-      } else {
-        setShowConflict(false);
-        setConflicts([]);
-        setMessage("No hay conflictos. Puedes bloquear el rango.");
-      }
-    } catch (err) {
-      setMessage("Error al verificar conflictos.");
+
+    // Filtrar citas que caen en el rango seleccionado
+    const conflictsFound = appointments.filter((a) => {
+      const aptDate = a.appointment_date;
+      const aptTime = a.appointment_time;
+      const startDate = selectedRange.start_date;
+      const endDate = selectedRange.end_date || startDate;
+      const startTime = selectedRange.start_time;
+      const endTime = selectedRange.end_time;
+
+      // Verifica si la cita está en el rango de fechas y horas
+      const inDateRange =
+        aptDate >= startDate && aptDate <= endDate;
+      const inTimeRange =
+        (!startTime || aptTime >= startTime) &&
+        (!endTime || aptTime <= endTime);
+
+      return inDateRange && inTimeRange;
+    });
+
+    if (conflictsFound.length > 0) {
+      setConflicts(conflictsFound);
+      setShowConflict(true);
+      setMessage("Hay conflictos con citas programadas en este rango.");
+    } else {
+      setShowConflict(false);
+      setConflicts([]);
+      setMessage("No hay conflictos. Puedes bloquear el rango.");
     }
     setLoading(false);
   };
@@ -107,57 +107,52 @@ export default function HomeDoctor() {
   const blockRange = async () => {
     setLoading(true);
     setMessage("");
+    const token = localStorage.getItem('auth_token');
     const body = {
       ...selectedRange,
       start_time: formatTime(selectedRange.start_time),
       end_time: formatTime(selectedRange.end_time),
       force_block: forceBlock,
     };
+
+    // Validación previa
+    if (
+      !body.start_date ||
+      !body.end_date ||
+      !body.start_time ||
+      !body.end_time
+    ) {
+      setMessage("Completa todos los campos de fecha y hora.");
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await axios.post(`${API_BASE}/unavailable/range/`, body, {
-        withCredentials: true,
-      });
+      const res = await axios.post(
+        `${API_BASE}/unavailable/range/`,
+        body,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          withCredentials: true,
+        }
+      );
       if (res.status === 201) {
         setMessage("Indisponibilidad marcada exitosamente.");
         setShowConflict(false);
         setForceBlock(false);
-        fetchUnavailabilities();
         fetchAppointments();
       }
     } catch (err) {
-      if (
-        err.response &&
-        err.response.status === 409 &&
-        err.response.data.existing_appointments
-      ) {
-        setConflicts(err.response.data.existing_appointments);
-        setShowConflict(true);
+      if (err.response && err.response.data) {
         setMessage(
-          err.response.data.warning || err.response.data.message || ""
+          JSON.stringify(err.response.data) ||
+          "Error al bloquear el rango."
         );
       } else {
-        setMessage(
-          (err.response && err.response.data.error) ||
-            "Error al bloquear el rango."
-        );
+        setMessage("Error al bloquear el rango.");
       }
-    }
-    setLoading(false);
-  };
-
-  // Desbloquear horario
-  const removeUnavailability = async (id) => {
-    if (!window.confirm("¿Seguro que deseas desbloquear este horario?")) return;
-    setLoading(true);
-    try {
-      await axios.delete(`${API_BASE}/unavailable/${id}/`, {
-        withCredentials: true,
-      });
-      setMessage("Horario desbloqueado.");
-      fetchUnavailabilities();
-      fetchAppointments();
-    } catch (err) {
-      setMessage("Error al desbloquear el horario.");
     }
     setLoading(false);
   };
@@ -177,9 +172,6 @@ export default function HomeDoctor() {
           week.push(<td key={d}></td>);
         } else {
           const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-          const isUnavailable = unavailabilities.some(
-            (u) => u.date === dateStr
-          );
           const hasAppointment = appointments.some(
             (a) => a.appointment_date === dateStr
           );
@@ -187,16 +179,12 @@ export default function HomeDoctor() {
             <td
               key={d}
               className={`p-2 rounded-lg text-center cursor-pointer ${
-                isUnavailable
-                  ? "bg-red-200 text-red-700"
-                  : hasAppointment
+                hasAppointment
                   ? "bg-blue-100"
                   : "hover:bg-gray-100"
               }`}
               title={
-                isUnavailable
-                  ? "Horario bloqueado"
-                  : hasAppointment
+                hasAppointment
                   ? "Citas programadas"
                   : ""
               }
@@ -218,8 +206,6 @@ export default function HomeDoctor() {
         <h1 className="text-2xl font-bold mb-6">AgendaMed</h1>
         <nav className="flex flex-col gap-2">
           <span className="font-semibold text-indigo-600">Gestión de Horarios</span>
-          <span className="text-gray-600">Bloqueo de Agenda</span>
-          <span className="text-gray-600">Historial de Citas</span>
         </nav>
         <div className="mt-10 flex items-center gap-2">
           <img
@@ -344,7 +330,7 @@ export default function HomeDoctor() {
               <ul className="text-sm">
                 {conflicts.map((c, i) => (
                   <li key={i}>
-                    {c.date} {c.time} - Paciente: {c.patient_name || c.patient} - Motivo: {c.reason}
+                    {c.appointment_date} {c.appointment_time} - Paciente: {c.patient_info?.user?.full_name || c.patient_info?.user?.username} - Motivo: {c.reason}
                   </li>
                 ))}
               </ul>
@@ -353,46 +339,6 @@ export default function HomeDoctor() {
               </div>
             </div>
           )}
-        </div>
-        {/* Lista de horarios bloqueados */}
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <h2 className="font-semibold mb-2">Horarios bloqueados</h2>
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Inicio</th>
-                <th>Fin</th>
-                <th>Motivo</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {unavailabilities.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="text-center text-gray-400">
-                    No hay horarios bloqueados.
-                  </td>
-                </tr>
-              )}
-              {unavailabilities.map((u) => (
-                <tr key={u.id}>
-                  <td>{u.date}</td>
-                  <td>{u.start_time}</td>
-                  <td>{u.end_time}</td>
-                  <td>{u.reason}</td>
-                  <td>
-                    <button
-                      className="text-red-500 hover:underline"
-                      onClick={() => removeUnavailability(u.id)}
-                    >
-                      Desbloquear
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
         {/* Lista de citas del mes */}
         <div className="bg-white rounded-lg shadow p-4">
