@@ -42,3 +42,5 @@ jobs:
             docker rm citas-backend || true
             docker run -d --name citas-backend -p 80:8000 ${{ secrets.DOCKER_USERNAME }}/citas-backend:latest
           EOF
+
+#hola
