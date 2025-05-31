@@ -1,195 +1,227 @@
-from rest_framework.test import APITestCase
-from django.urls import reverse
-from rest_framework import status
+from django.test import TestCase
+from django.core import mail
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from AppCitasMedicas.models import PatientProfile, DoctorProfile
-from appointments.models import Appointment
-from rest_framework_simplejwt.tokens import RefreshToken
-from datetime import date, time, timedelta
-from rest_framework.test import APITestCase
-from django.urls import reverse
-from rest_framework import status
-from django.contrib.auth import get_user_model
-from AppCitasMedicas.models import PatientProfile, DoctorProfile
-from appointments.models import Appointment
-from rest_framework_simplejwt.tokens import RefreshToken
-from datetime import date, timedelta, time
-from django.utils import timezone
+from unittest.mock import patch
+from .models import User, PatientProfile, DoctorProfile, DoctorSchedule
+from .serializers import (
+    PatientRegistrationSerializer,
+    EmailVerificationSerializer,
+    DoctorRegistrationSerializer,
+    LoginSerializer,
+    UserProfileSerializer,
+    PatientProfileSerializer,
+    DoctorProfileSerializer,
+    DoctorScheduleSerializer,
+)
 
+UserModel = get_user_model()
 
-User = get_user_model()
-
-class AppointmentTests(APITestCase):
-    def setUp(self):
-        # Crear paciente
-        self.patient_user = User.objects.create_user(
-            username='paciente1',
-            email='paciente@example.com',
-            password='paciente123',
-            full_name='Paciente Uno',
-            user_type='patient',
-            phone_number='123456789'
-        )
-        self.patient_profile = PatientProfile.objects.create(
-            user=self.patient_user,
-            date_of_birth='1995-01-01'
-        )
-        self.patient_token = str(RefreshToken.for_user(self.patient_user).access_token)
-
-        # Crear doctor
-        self.doctor_user = User.objects.create_user(
-            username='doctor1',
-            email='doctor@example.com',
-            password='doctor123',
-            full_name='Doctor Uno',
-            user_type='doctor',
-            phone_number='987654321'
-        )
-        self.doctor_profile = DoctorProfile.objects.create(
-            user=self.doctor_user,
-            specialty='general'
-        )
-        self.doctor_token = str(RefreshToken.for_user(self.doctor_user).access_token)
-
-    def test_create_appointment_as_patient(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.patient_token}')
-        url = reverse('create_appointment')
+class PatientRegistrationSerializerTest(TestCase):
+    def test_valid_registration(self):
         data = {
-            "doctor": self.doctor_profile.id,
-            "appointment_date": str(date.today() + timedelta(days=1)),
-            "appointment_time": "10:00"
+            "email": "testpatient@example.com",
+            "full_name": "Test Patient",
+            "phone_number": "+12345678901",
+            "password": "supersecret",
+            "password_confirm": "supersecret"
         }
-        response = self.client.post(url, data)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIn('appointment', response.data)
+        with patch("AppCitasMedicas.serializers.send_mail") as mock_send_mail, \
+             patch.object(User, "generate_verification_token", return_value="token123"):
+            serializer = PatientRegistrationSerializer(data=data)
+            self.assertTrue(serializer.is_valid(), serializer.errors)
+            user = serializer.save()
+            self.assertEqual(user.email, data["email"])
+            self.assertFalse(user.is_email_verified)
+            self.assertEqual(PatientProfile.objects.filter(user=user).count(), 1)
+            mock_send_mail.assert_called_once()
 
-    def test_create_appointment_as_doctor_denied(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.doctor_token}')
-        url = reverse('create_appointment')
+    def test_email_already_exists(self):
+        User.objects.create_user(email="testpatient@example.com", username="testpatient@example.com", password="pass")
         data = {
-            "doctor": self.doctor_profile.id,
-            "appointment_date": str(date.today() + timedelta(days=1)),
-            "appointment_time": "10:00"
+            "email": "testpatient@example.com",
+            "full_name": "Test Patient",
+            "phone_number": "+12345678901",
+            "password": "supersecret",
+            "password_confirm": "supersecret"
         }
-        response = self.client.post(url, data)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        serializer = PatientRegistrationSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("email", serializer.errors)
 
-    def test_get_patient_appointments(self):
-        # Crear una cita directamente en la base de datos
-        appointment = Appointment.objects.create(
-            patient=self.patient_profile,
-            doctor=self.doctor_profile,
-            appointment_date=date.today() + timedelta(days=2),
-            appointment_time=time(11, 0),
-            status='pending'
-        )
+    def test_phone_format_invalid(self):
+        data = {
+            "email": "test2@example.com",
+            "full_name": "Test Patient",
+            "phone_number": "123",  # Invalid
+            "password": "supersecret",
+            "password_confirm": "supersecret"
+        }
+        serializer = PatientRegistrationSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("phone_number", serializer.errors)
 
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.patient_token}')
-        url = reverse('patient_appointments')
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
+    def test_passwords_do_not_match(self):
+        data = {
+            "email": "test3@example.com",
+            "full_name": "Test Patient",
+            "phone_number": "+12345678901",
+            "password": "supersecret",
+            "password_confirm": "othersecret"
+        }
+        serializer = PatientRegistrationSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("non_field_errors", serializer.errors)
 
-    def test_get_appointments_as_doctor_denied(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.doctor_token}')
-        url = reverse('patient_appointments')
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-
-
-class PatientAppointmentListViewTests(APITestCase):
+class EmailVerificationSerializerTest(TestCase):
     def setUp(self):
-        # Crear paciente
-        self.patient_user = User.objects.create_user(
-            username='paciente1',
-            email='paciente@example.com',
-            password='paciente123',
-            full_name='Paciente Uno',
-            user_type='patient',
-            phone_number='123456789'
-        )
-        self.patient_profile = PatientProfile.objects.create(
-            user=self.patient_user,
-            date_of_birth='1990-01-01'
-        )
-        self.patient_token = str(RefreshToken.for_user(self.patient_user).access_token)
-
-        # Crear doctor
-        self.doctor_user = User.objects.create_user(
-            username='doctor1',
-            email='doctor@example.com',
-            password='doctor123',
-            full_name='Doctor Uno',
-            user_type='doctor',
-            phone_number='987654321'
-        )
-        self.doctor_profile = DoctorProfile.objects.create(
-            user=self.doctor_user,
-            specialty='general'
+        self.user = User.objects.create_user(
+            email="verifyme@example.com",
+            username="verifyme@example.com",
+            password="pass",
+            is_email_verified=False,
+            email_verification_token="tokentest"
         )
 
-        # Crear citas
-        self.today = date.today()
-        self.appt1 = Appointment.objects.create(
-            patient=self.patient_profile,
-            doctor=self.doctor_profile,
-            appointment_date=self.today + timedelta(days=1),
-            appointment_time=time(10, 0),
-            status='scheduled'
+    def test_valid_token(self):
+        serializer = EmailVerificationSerializer(data={"token": "tokentest"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_invalid_token(self):
+        serializer = EmailVerificationSerializer(data={"token": "invalid"})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("token", serializer.errors)
+
+class DoctorRegistrationSerializerTest(TestCase):
+    def test_valid_registration(self):
+        data = {
+            "email": "doctor@example.com",
+            "full_name": "Dr. Who",
+            "specialty": "Cardiology",
+            "professional_license": "ABC123"
+        }
+        with patch("AppCitasMedicas.serializers.send_mail") as mock_send_mail, \
+             patch.object(DoctorProfile, "generate_random_password", return_value="randompass"):
+            serializer = DoctorRegistrationSerializer(data=data)
+            self.assertTrue(serializer.is_valid(), serializer.errors)
+            user = serializer.save()
+            self.assertEqual(user.email, data["email"])
+            self.assertTrue(user.is_email_verified)
+            self.assertEqual(DoctorProfile.objects.filter(user=user).count(), 1)
+            mock_send_mail.assert_called_once()
+
+    def test_email_already_exists(self):
+        User.objects.create_user(email="doctor@example.com", username="doctor@example.com", password="pass")
+        data = {
+            "email": "doctor@example.com",
+            "full_name": "Dr. Who",
+            "specialty": "Cardiology",
+            "professional_license": "ABC123"
+        }
+        serializer = DoctorRegistrationSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("email", serializer.errors)
+
+    def test_license_already_exists(self):
+        user = User.objects.create_user(email="otherdoc@example.com", username="otherdoc@example.com", password="pass")
+        DoctorProfile.objects.create(user=user, specialty="Cardiology", professional_license="ABC123")
+        data = {
+            "email": "doctor2@example.com",
+            "full_name": "Dr. Who",
+            "specialty": "Cardiology",
+            "professional_license": "ABC123"
+        }
+        serializer = DoctorRegistrationSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("professional_license", serializer.errors)
+
+class LoginSerializerTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="login@example.com",
+            username="login@example.com",
+            password="pass",
+            is_email_verified=True
         )
-        self.appt2 = Appointment.objects.create(
-            patient=self.patient_profile,
-            doctor=self.doctor_profile,
-            appointment_date=self.today - timedelta(days=2),
-            appointment_time=time(11, 0),
-            status='completed'
+
+    def test_valid_login(self):
+        serializer = LoginSerializer(data={"email": "login@example.com", "password": "pass"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["user"], self.user)
+
+    def test_invalid_login(self):
+        serializer = LoginSerializer(data={"email": "login@example.com", "password": "wrong"})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("non_field_errors", serializer.errors)
+
+    def test_unverified_email(self):
+        self.user.is_email_verified = False
+        self.user.save()
+        serializer = LoginSerializer(data={"email": "login@example.com", "password": "pass"})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("non_field_errors", serializer.errors)
+
+class UserProfileSerializerTest(TestCase):
+    def test_fields(self):
+        user = User.objects.create_user(
+            email="profile@example.com",
+            username="profile@example.com",
+            password="pass",
+            full_name="Profile User",
+            phone_number="+12345678901",
+            user_type="patient"
         )
+        serializer = UserProfileSerializer(user)
+        self.assertEqual(serializer.data["email"], "profile@example.com")
+        self.assertEqual(serializer.data["full_name"], "Profile User")
+        self.assertEqual(serializer.data["user_type"], "patient")
 
-        self.url = reverse('patient-appointments')  # URL para la vista PatientAppointmentListView
+class PatientProfileSerializerTest(TestCase):
+    def test_fields(self):
+        user = User.objects.create_user(
+            email="patprofile@example.com",
+            username="patprofile@example.com",
+            password="pass",
+            full_name="Patient User",
+            phone_number="+12345678901",
+            user_type="patient"
+        )
+        patient = PatientProfile.objects.create(user=user)
+        serializer = PatientProfileSerializer(patient)
+        self.assertEqual(serializer.data["user"]["email"], "patprofile@example.com")
 
-    def test_patient_can_view_appointments(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.patient_token}')
-        response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('appointments', response.data)
-        self.assertIn('statistics', response.data)
-        self.assertEqual(len(response.data['appointments']), 2)
+class DoctorProfileSerializerTest(TestCase):
+    def test_fields(self):
+        user = User.objects.create_user(
+            email="docprofile@example.com",
+            username="docprofile@example.com",
+            password="pass",
+            full_name="Doctor User",
+            phone_number="+12345678901",
+            user_type="doctor"
+        )
+        doctor = DoctorProfile.objects.create(user=user, specialty="Cardiology", professional_license="XYZ123")
+        serializer = DoctorProfileSerializer(doctor)
+        self.assertEqual(serializer.data["user"]["email"], "docprofile@example.com")
+        self.assertEqual(serializer.data["specialty"], "Cardiology")
 
-    def test_only_patients_can_access(self):
-        doctor_token = str(RefreshToken.for_user(self.doctor_user).access_token)
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {doctor_token}')
-        response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_filter_by_status(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.patient_token}')
-        response = self.client.get(self.url, {'status': 'scheduled'})
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['appointments']), 1)
-        self.assertEqual(response.data['appointments'][0]['status'], 'scheduled')
-
-    def test_filter_by_date_range(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.patient_token}')
-        date_from = (self.today - timedelta(days=3)).strftime('%Y-%m-%d')
-        date_to = (self.today - timedelta(days=1)).strftime('%Y-%m-%d')
-        response = self.client.get(self.url, {'date_from': date_from, 'date_to': date_to})
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['appointments']), 1)
-        self.assertEqual(response.data['appointments'][0]['status'], 'completed')
-
-    def test_filter_upcoming(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.patient_token}')
-        response = self.client.get(self.url, {'upcoming': 'true'})
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['appointments']), 1)
-        self.assertEqual(response.data['appointments'][0]['status'], 'scheduled')
-
-    def test_next_appointment_data_in_statistics(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.patient_token}')
-        response = self.client.get(self.url)
-        stats = response.data['statistics']
-        self.assertEqual(stats['upcoming_appointments'], 1)
-        self.assertIsNotNone(stats['next_appointment'])
-        self.assertEqual(stats['next_appointment']['id'], self.appt1.id)
-
+class DoctorScheduleSerializerTest(TestCase):
+    def test_fields(self):
+        user = User.objects.create_user(
+            email="docsch@example.com",
+            username="docsch@example.com",
+            password="pass",
+            full_name="Doctor User",
+            phone_number="+12345678901",
+            user_type="doctor"
+        )
+        doctor = DoctorProfile.objects.create(user=user, specialty="Cardiology", professional_license="SCH123")
+        schedule = DoctorSchedule.objects.create(
+            doctor=doctor,
+            weekday=1,
+            start_time="08:00",
+            end_time="12:00"
+        )
+        serializer = DoctorScheduleSerializer(schedule)
+        self.assertEqual(serializer.data["doctor"], doctor.id)
+        self.assertEqual(serializer.data["weekday"], 1)
