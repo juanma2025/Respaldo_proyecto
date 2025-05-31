@@ -19,6 +19,7 @@ from django.utils import timezone
 from rest_framework import status
 from .serializers import EmailVerificationSerializer
 from django.contrib.auth import authenticate
+from django .shortcuts import render
 
 
 
@@ -421,3 +422,6 @@ def resend_verification_email(request):
             'success': False,
             'message': 'Usuario no encontrado o ya verificado'
         }, status=status.HTTP_404_NOT_FOUND)
+    
+def index(request):
+    return render(request, 'index.html')

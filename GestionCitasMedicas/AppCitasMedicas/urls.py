@@ -1,6 +1,7 @@
+from operator import index
 from django.urls import path
 from . import views
-
+from django.conf.urls.static import static
 urlpatterns = [
     # Registro y autenticación
     path('register/patient/', views.register_patient, name='register_patient'),
@@ -22,4 +23,11 @@ urlpatterns = [
     # Horarios de médicos
     path('schedules/', views.DoctorScheduleListCreate.as_view(), name='doctor_schedules'),
     path('schedules/<int:pk>/', views.DoctorScheduleDetail.as_view(), name='doctor_schedule_detail'),
+]
+
+if settings.DEBUG:
+    urlpatterns +=static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+
+urlpatterns+=[
+    re_path(r'^(?:.*)/?$',index,name='index')
 ]
