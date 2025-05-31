@@ -6,7 +6,7 @@ ON push:
 
 jobs:
   build-and-deploy:
-    runs-on:ubuntu-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
